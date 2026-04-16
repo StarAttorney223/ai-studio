@@ -184,13 +184,13 @@ function ChatbotPage() {
               {messages.map((msg, idx) => (
                 <div
                   key={`${msg.role}-${idx}`}
-                  className={`max-w-[78%] break-words rounded-3xl px-4 py-3 text-[1.02rem] leading-8 ${
+                  className={`max-w-[78%] break-words rounded-3xl px-4 py-3 text-[1.02rem] ${
                     msg.role === "assistant"
                       ? "bg-gray-100 text-gray-900 dark:bg-gray-700 dark:text-white"
                       : "ml-auto bg-studio-primary text-white"
                   }`}
                 >
-                  {msg.content}
+                  <p className="whitespace-pre-line leading-7">{msg.content}</p>
                 </div>
               ))}
               {loading && <p className="text-sm text-gray-600 dark:text-gray-300">Assistant is thinking...</p>}

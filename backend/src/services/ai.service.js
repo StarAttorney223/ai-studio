@@ -1,10 +1,135 @@
-﻿import { env } from "../config/env.js";
+import { env } from "../config/env.js";
 
 const HF_API_URL = "https://router.huggingface.co/hf-inference/models";
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 
-function buildPrompt({ topic, platform, tone, optimize }) {
-  return `Write a social media caption for ${platform}. Topic: ${topic}. Tone: ${tone}. ${optimize ? "Optimize for engagement, include CTA and relevant hashtags." : "Keep it concise."}`;
+const CONTENT_REQUEST_PATTERN =
+  /\b(generate|write|create|draft|caption|post|script|carousel|thread|copy|content|linkedin post|instagram caption|youtube script|ad copy)\b/i;
+const DETAILED_REQUEST_PATTERN =
+  /\b(detailed|detail|longer|in-depth|comprehensive|step by step|full version|deep dive)\b/i;
+
+function wantsDetailedResponse(text = "") {
+  return DETAILED_REQUEST_PATTERN.test(String(text));
+}
+
+function detectResponseMode(message = "") {
+  return CONTENT_REQUEST_PATTERN.test(String(message)) ? "content" : "chat";
+}
+
+function detectContentFormat(text = "") {
+  const normalized = String(text).toLowerCase();
+
+  if (normalized.includes("script")) {
+    return "script";
+  }
+
+  if (normalized.includes("carousel")) {
+    return "carousel";
+  }
+
+  return "caption";
+}
+
+function normalizeHashtags(rawHashtags = []) {
+  return (rawHashtags || [])
+    .filter(Boolean)
+    .map((tag) => String(tag).trim())
+    .filter((tag) => tag.length > 0)
+    .map((tag) => (tag.startsWith("#") ? tag : `#${tag.replace(/\s+/g, "")}`))
+    .slice(0, 5);
+}
+
+function extractHashtags(content = "") {
+  return normalizeHashtags(content.match(/#[\w-]+/g) || []);
+}
+
+function stripHashtags(content = "") {
+  return String(content).replace(/#[\w-]+/g, "").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function buildContentPrompt({ topic, platform, tone, optimize, format, detailed }) {
+  const formatRules = {
+    caption:
+      "For captions, write 2 to 4 short lines. Add 3 to 5 relevant hashtags only if they genuinely fit.",
+    script:
+      "For scripts, use exactly these labels on separate lines: Hook:, Main Content:, Call to Action:. Keep each section concise and readable.",
+    carousel:
+      "For carousels, format as Slide 1:, Slide 2:, and continue only as needed. Keep each slide short and clear."
+  };
+
+  return [
+    `Create ${format} content for ${platform}.`,
+    `Topic: ${topic}.`,
+    `Tone: ${tone}.`,
+    optimize
+      ? "Make it engaging and polished, but do not make it feel overloaded."
+      : "Keep it clean and straightforward.",
+    "Output must be clean, structured, and easy to scan.",
+    "Use short paragraphs with line breaks between ideas.",
+    "Do not generate multiple options.",
+    "Do not overuse symbols, markdown decoration, or unnecessary hashtags.",
+    "Do not add image suggestions automatically.",
+    detailed
+      ? "The user asked for detail, so provide a fuller version while staying readable."
+      : "Keep responses concise unless the user explicitly asks for detailed output.",
+    formatRules[format] || formatRules.caption
+  ].join(" ");
+}
+
+function buildChatPrompt({ message, context, detailed }) {
+  return [
+    context ? `Context: ${context}.` : "",
+    `User message: ${message}.`,
+    "Respond like a real person having a conversation.",
+    "Keep it natural, simple, friendly, and engaging.",
+    "Use short paragraphs with clean spacing.",
+    "Do not structure the reply like a post.",
+    "Do not use hashtags.",
+    "Do not give multiple options or label things as Option 1 or Option 2.",
+    "Do not overuse formatting symbols or markdown headings.",
+    "Use emojis sparingly only if they feel natural.",
+    detailed
+      ? "The user asked for more detail, so you may expand naturally while staying conversational."
+      : "Keep responses concise unless the user explicitly asks for detailed output."
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function buildOpenRouterMessages(payload) {
+  if (payload.mode === "chat") {
+    return [
+      {
+        role: "system",
+        content:
+          "You are a warm, natural conversational assistant. Reply like a real person. Keep spacing clean and avoid post-style formatting, hashtags, multiple options, and heavy structure."
+      },
+      {
+        role: "user",
+        content: buildChatPrompt(payload)
+      }
+    ];
+  }
+
+  return [
+    {
+      role: "system",
+      content:
+        "You are an expert social media copywriter. Produce concise, readable output with clean spacing. Never return multiple options. Avoid heavy markdown and unnecessary symbols."
+    },
+    {
+      role: "user",
+      content: buildContentPrompt(payload)
+    }
+  ];
+}
+
+function buildHuggingFacePrompt(payload) {
+  if (payload.mode === "chat") {
+    return buildChatPrompt(payload);
+  }
+
+  return buildContentPrompt(payload);
 }
 
 async function generateWithHuggingFace(payload) {
@@ -12,7 +137,7 @@ async function generateWithHuggingFace(payload) {
     throw new Error("Missing HUGGINGFACE_API_KEY in backend environment.");
   }
 
-  const prompt = buildPrompt(payload);
+  const prompt = buildHuggingFacePrompt(payload);
   const candidateModels = [
     env.huggingFaceTextModel,
     "HuggingFaceTB/SmolLM3-3B",
@@ -30,7 +155,7 @@ async function generateWithHuggingFace(payload) {
       },
       body: JSON.stringify({
         inputs: prompt,
-        parameters: { max_new_tokens: 220, temperature: 0.75, return_full_text: false }
+        parameters: { max_new_tokens: 260, temperature: payload.mode === "chat" ? 0.8 : 0.7, return_full_text: false }
       })
     });
 
@@ -40,6 +165,7 @@ async function generateWithHuggingFace(payload) {
       if (Array.isArray(data) && data[0]?.generated_text) {
         return data[0].generated_text.trim();
       }
+
       return data.generated_text?.trim() || "Unable to generate content right now.";
     }
 
@@ -62,14 +188,12 @@ async function generateWithOpenRouter(payload) {
     },
     body: JSON.stringify({
       model: env.openRouterModel,
-      messages: [
-        { role: "system", content: "You are an expert social media copywriter." },
-        { role: "user", content: buildPrompt(payload) }
-      ]
+      temperature: payload.mode === "chat" ? 0.85 : 0.7,
+      messages: buildOpenRouterMessages(payload)
     })
   });
 
-  const data = await response.json();
+  const data = await response.json().catch(() => ({}));
 
   if (!response.ok) {
     throw new Error(data?.error?.message || "OpenRouter generation failed");
@@ -78,7 +202,7 @@ async function generateWithOpenRouter(payload) {
   return data?.choices?.[0]?.message?.content?.trim() || "Unable to generate content right now.";
 }
 
-export async function generateCaption(payload) {
+async function generateText(payload) {
   if (env.aiProvider === "openrouter") {
     return generateWithOpenRouter(payload);
   }
@@ -96,24 +220,40 @@ export async function generateCaption(payload) {
   }
 }
 
-export async function chatWithAssistant({ message, context }) {
-  const chatPayload = {
-    topic: `${context || "General social strategy"}. User message: ${message}`,
-    platform: "Instagram / LinkedIn",
-    tone: "Strategic consultant",
-    optimize: true
-  };
-
-  return generateCaption(chatPayload);
+export async function generateCaption({ topic, platform, tone, optimize }) {
+  const format = detectContentFormat(topic);
+  return generateText({
+    mode: "content",
+    topic,
+    platform,
+    tone,
+    optimize: Boolean(optimize),
+    format,
+    detailed: wantsDetailedResponse(topic)
+  });
 }
 
-function normalizeHashtags(rawHashtags = []) {
-  return (rawHashtags || [])
-    .filter(Boolean)
-    .map((tag) => String(tag).trim())
-    .filter((tag) => tag.length > 0)
-    .map((tag) => (tag.startsWith("#") ? tag : `#${tag.replace(/\s+/g, "")}`))
-    .slice(0, 8);
+export async function chatWithAssistant({ message, context }) {
+  const mode = detectResponseMode(message);
+
+  if (mode === "content") {
+    return generateText({
+      mode: "content",
+      topic: message,
+      platform: context || "Instagram / LinkedIn",
+      tone: "Helpful and clear",
+      optimize: true,
+      format: detectContentFormat(message),
+      detailed: wantsDetailedResponse(message)
+    });
+  }
+
+  return generateText({
+    mode: "chat",
+    message,
+    context,
+    detailed: wantsDetailedResponse(message)
+  });
 }
 
 function parseCaptionPayload(content) {
@@ -121,15 +261,13 @@ function parseCaptionPayload(content) {
     const normalized = content.replace(/```json|```/gi, "").trim();
     const parsed = JSON.parse(normalized);
     return {
-      caption: String(parsed.caption || "").trim(),
+      caption: stripHashtags(String(parsed.caption || "").trim()),
       hashtags: normalizeHashtags(parsed.hashtags)
     };
   } catch {
-    const hashtagMatches = content.match(/#[\w-]+/g) || [];
-    const caption = content.replace(/#[\w-]+/g, "").trim();
     return {
-      caption: caption || content.trim(),
-      hashtags: normalizeHashtags(hashtagMatches)
+      caption: stripHashtags(content),
+      hashtags: extractHashtags(content)
     };
   }
 }
@@ -139,14 +277,21 @@ export async function generateOpenRouterCaption({ topic, platform, tone }) {
     throw new Error("Missing OPENROUTER_API_KEY in backend environment.");
   }
 
-  const prompt = `Generate a social media caption for:
-Topic: ${topic}
-Platform: ${platform}
-Tone: ${tone}
-
-Also include 8-10 hashtags.
-Return strict JSON only in this format:
-{"caption":"...","hashtags":["#tag1","#tag2","#tag3"]}`;
+  const format = detectContentFormat(topic);
+  const prompt = [
+    `Create ${format} content for ${platform}.`,
+    `Topic: ${topic}.`,
+    `Tone: ${tone}.`,
+    "Keep it concise, readable, and clean.",
+    "Use short lines and natural spacing.",
+    "Do not generate multiple options.",
+    format === "caption"
+      ? "For captions, write 2 to 4 short lines and include 3 to 5 relevant hashtags only if needed."
+      : format === "script"
+        ? "For scripts, use Hook:, Main Content:, and Call to Action:."
+        : "For carousels, use Slide 1:, Slide 2:, and continue only when needed.",
+    'Return strict JSON only in this format: {"caption":"...","hashtags":["#tag1","#tag2"]}'
+  ].join(" ");
 
   const response = await fetch(OPENROUTER_URL, {
     method: "POST",
@@ -160,7 +305,8 @@ Return strict JSON only in this format:
       messages: [
         {
           role: "system",
-          content: "You are a social media copywriter. Return concise engaging output as valid JSON."
+          content:
+            "You are a social media copywriter. Return concise engaging output as valid JSON. Keep formatting minimal and readable."
         },
         {
           role: "user",

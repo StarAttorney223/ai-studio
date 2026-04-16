@@ -3,6 +3,7 @@ import { Sparkles } from "lucide-react";
 import { api } from "../services/api";
 
 function ContentGeneratorPage() {
+  const [hashtags, setHashtags] = useState([]);
   const [form, setForm] = useState({
     topic: "",
     platform: "Instagram",
@@ -33,6 +34,7 @@ function ContentGeneratorPage() {
         optimize: form.optimize
       });
       setOutput(data.data?.caption || "No caption returned.");
+      setHashtags(data.data?.hashtags || []);
       setIsEditing(false);
     } catch (err) {
       setError(err.message);
@@ -150,12 +152,12 @@ function ContentGeneratorPage() {
               className="h-[560px] w-full resize-none bg-transparent text-[1.1rem] leading-8 text-gray-900 outline-none dark:text-white"
             />
           ) : (
-            <p className="whitespace-pre-wrap text-[1.1rem] leading-8 text-gray-900 dark:text-white">{output}</p>
+            <p className="whitespace-pre-line text-[1.05rem] leading-7 text-gray-900 dark:text-white">{output}</p>
           )}
         </div>
 
         <div className="mt-6 flex flex-wrap gap-2">
-          {["#Sustainability", "#SocialMedia", "#AIContent", "#Growth"].map((tag) => (
+          {hashtags.map((tag) => (
             <span key={tag} className="rounded-full bg-[#efe6ff] px-4 py-2 text-sm font-semibold text-studio-primary">
               {tag}
             </span>

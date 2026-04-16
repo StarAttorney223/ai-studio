@@ -18,7 +18,7 @@ export async function generateContentController(req, res) {
     data: {
       id: saved._id,
       caption,
-      hashtags: ["#AIContent", "#SocialMedia", "#Growth"]
+      hashtags: (caption.match(/#[\w-]+/g) || []).slice(0, 5)
     }
   });
 }

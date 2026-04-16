@@ -31,28 +31,27 @@ function normalizeStoredItem(item) {
   };
 }
 
-function getAspectClass(aspectRatio) {
+function getResultWidthClass(aspectRatio) {
   const map = {
-    "1:1": "aspect-square",
-    "16:9": "aspect-[16/9]",
-    "9:16": "aspect-[9/16] max-h-[72vh]",
-    "4:5": "aspect-[4/5] max-h-[72vh]",
-    "5:4": "aspect-[5/4]",
-    "4:3": "aspect-[4/3]",
-    "3:4": "aspect-[3/4] max-h-[72vh]",
-    "3:2": "aspect-[3/2]",
-    "2:3": "aspect-[2/3] max-h-[72vh]",
-    "21:9": "aspect-[21/9]"
+    "9:16": "max-w-[300px]",
+    "4:5": "max-w-[360px]",
+    "3:4": "max-w-[340px]",
+    "2:3": "max-w-[320px]",
+    "1:1": "max-w-[420px]"
   };
 
-  return map[aspectRatio] || map["16:9"];
+  return map[aspectRatio] || "max-w-full";
 }
 
 function CreationCard({ item, onDelete, showDelete }) {
   return (
-    <article className="group overflow-hidden rounded-[2rem] border border-gray-200 bg-white shadow-soft dark:border-gray-700 dark:bg-gray-800">
-      <div className={`relative ${getAspectClass(item.aspectRatio)}`}>
-        <img src={item.imageUrl} alt={item.prompt || "Creation"} className="h-full w-full object-cover" />
+    <article className="group overflow-hidden rounded-[1.5rem] border border-gray-200 bg-white p-2 shadow-soft dark:border-gray-700 dark:bg-gray-800">
+      <div className="relative">
+        <img
+          src={item.imageUrl}
+          alt={item.prompt || "Creation"}
+          className="w-full h-auto object-contain rounded-lg"
+        />
         {item.textOverlay && (
           <div className="pointer-events-none absolute inset-0 flex items-start justify-center bg-gradient-to-t from-black/65 via-black/15 to-black/45 p-4">
             <p className="mt-2 max-w-[90%] text-center text-lg font-black uppercase leading-tight tracking-[0.04em] text-white drop-shadow-[0_4px_16px_rgba(0,0,0,0.8)] sm:text-xl">
@@ -277,8 +276,21 @@ function ImageGeneratorPage() {
       {result && (
         <section>
           <h2 className="text-3xl font-semibold text-gray-900 dark:text-white">Latest Result</h2>
-          <div className="mt-4 max-w-4xl">
-            <CreationCard item={result} onDelete={handleDelete} showDelete={false} />
+          <div className={`mt-4 ${getResultWidthClass(result.aspectRatio)}`}>
+            <div className="relative rounded-xl border border-gray-200 bg-white p-2 shadow-soft dark:border-gray-700 dark:bg-gray-800">
+              <img
+                src={result.imageUrl}
+                alt={result.prompt || "Latest result"}
+                className="w-full h-auto max-h-[500px] object-contain rounded-lg"
+              />
+              {result.textOverlay && (
+                <div className="pointer-events-none absolute inset-2 flex items-start justify-center bg-gradient-to-t from-black/65 via-black/15 to-black/45 p-4">
+                  <p className="mt-2 max-w-[90%] text-center text-lg font-black uppercase leading-tight tracking-[0.04em] text-white drop-shadow-[0_4px_16px_rgba(0,0,0,0.9)] sm:text-xl">
+                    {result.textOverlay}
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
         </section>
       )}
@@ -288,7 +300,7 @@ function ImageGeneratorPage() {
           <h2 className="text-4xl font-bold text-gray-900 dark:text-white">Recent Creations</h2>
           <span className="rounded-full bg-[#eadbff] px-3 py-1 text-xs font-semibold text-studio-primary">{recentGenerated.length} New</span>
         </div>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-1 items-start gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
           {allRecentCreations.map((item) => (
             <CreationCard
               key={item.id}
