@@ -1,7 +1,9 @@
+import fs from "fs/promises";
 import { env } from "../config/env.js";
 
 const HF_API_URL = "https://router.huggingface.co/hf-inference/models";
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
+const OPENAI_URL = "https://api.openai.com/v1/chat/completions";
 
 const CONTENT_REQUEST_PATTERN =
   /\b(generate|write|create|draft|caption|post|script|carousel|thread|copy|content|linkedin post|instagram caption|youtube script|ad copy)\b/i;
@@ -47,14 +49,64 @@ function stripHashtags(content = "") {
   return String(content).replace(/#[\w-]+/g, "").replace(/\n{3,}/g, "\n\n").trim();
 }
 
-function buildContentPrompt({ topic, platform, tone, optimize, format, detailed }) {
+async function describeUploadedImage(imageContext) {
+  if (!imageContext?.path) {
+    return "";
+  }
+
+  if (!env.openAiApiKey) {
+    return `User uploaded an image named "${imageContext.originalName || "reference image"}". Use it as visual context for the response.`;
+  }
+
+  try {
+    const fileBuffer = await fs.readFile(imageContext.path);
+    const dataUrl = `data:${imageContext.mimeType || "image/png"};base64,${fileBuffer.toString("base64")}`;
+
+    const response = await fetch(OPENAI_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${env.openAiApiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: env.openAiModel || "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content:
+              "Describe the uploaded image in 2 short sentences for a social media content assistant. Focus on subject, mood, composition, and any text visible."
+          },
+          {
+            role: "user",
+            content: [
+              { type: "text", text: "Analyze this image for content generation context." },
+              { type: "image_url", image_url: { url: dataUrl } }
+            ]
+          }
+        ],
+        max_tokens: 160
+      })
+    });
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data?.error?.message || "OpenAI image analysis failed");
+    }
+
+    return data?.choices?.[0]?.message?.content?.trim() || "";
+  } catch {
+    return `User uploaded an image named "${imageContext.originalName || "reference image"}". Incorporate its visible content into the response when possible.`;
+  }
+}
+
+function buildContentPrompt({ topic, platform, tone, optimize, format, detailed, imageSummary }) {
   const formatRules = {
     caption:
       "For captions, write 2 to 4 short lines. Add 3 to 5 relevant hashtags only if they genuinely fit.",
     script:
-      "For scripts, use exactly these labels on separate lines: Hook:, Main Content:, Call to Action:. Keep each section concise and readable.",
+      "For scripts, use exactly these labels on separate lines: Hook, Main Content, Call to Action. Keep each section concise and readable.",
     carousel:
-      "For carousels, format as Slide 1:, Slide 2:, and continue only as needed. Keep each slide short and clear."
+      "For carousels, format as Slide 1, Slide 2, and continue only as needed. Keep each slide short and clear."
   };
 
   return [
@@ -64,30 +116,33 @@ function buildContentPrompt({ topic, platform, tone, optimize, format, detailed 
     optimize
       ? "Make it engaging and polished, but do not make it feel overloaded."
       : "Keep it clean and straightforward.",
+    imageSummary
+      ? `User has provided an image. Analyze its content and incorporate it into the response. Image context: ${imageSummary}`
+      : "",
     "Output must be clean, structured, and easy to scan.",
     "Use short paragraphs with line breaks between ideas.",
     "Do not generate multiple options.",
-    "Do not overuse symbols, markdown decoration, or unnecessary hashtags.",
+    "Do not overuse symbols, markdown decoration, unnecessary hashtags, or separators like ---.",
     "Do not add image suggestions automatically.",
     detailed
       ? "The user asked for detail, so provide a fuller version while staying readable."
       : "Keep responses concise unless the user explicitly asks for detailed output.",
     formatRules[format] || formatRules.caption
-  ].join(" ");
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
 function buildChatPrompt({ message, context, detailed }) {
   return [
     context ? `Context: ${context}.` : "",
     `User message: ${message}.`,
-    "Respond like a real person having a conversation.",
-    "Keep it natural, simple, friendly, and engaging.",
+    "Respond like a real human conversation. Keep it natural and simple.",
     "Use short paragraphs with clean spacing.",
     "Do not structure the reply like a post.",
     "Do not use hashtags.",
     "Do not give multiple options or label things as Option 1 or Option 2.",
-    "Do not overuse formatting symbols or markdown headings.",
-    "Use emojis sparingly only if they feel natural.",
+    "Do not overuse formatting symbols, markdown headings, separators like ---, or emojis.",
     detailed
       ? "The user asked for more detail, so you may expand naturally while staying conversational."
       : "Keep responses concise unless the user explicitly asks for detailed output."
@@ -115,7 +170,7 @@ function buildOpenRouterMessages(payload) {
     {
       role: "system",
       content:
-        "You are an expert social media copywriter. Produce concise, readable output with clean spacing. Never return multiple options. Avoid heavy markdown and unnecessary symbols."
+        "You are an expert social media copywriter. Produce concise, readable output with clean spacing. Never return multiple options. Avoid heavy markdown, large text blocks, and unnecessary symbols."
     },
     {
       role: "user",
@@ -220,8 +275,10 @@ async function generateText(payload) {
   }
 }
 
-export async function generateCaption({ topic, platform, tone, optimize }) {
+export async function generateCaption({ topic, platform, tone, optimize, imageContext = null }) {
   const format = detectContentFormat(topic);
+  const imageSummary = await describeUploadedImage(imageContext);
+
   return generateText({
     mode: "content",
     topic,
@@ -229,7 +286,8 @@ export async function generateCaption({ topic, platform, tone, optimize }) {
     tone,
     optimize: Boolean(optimize),
     format,
-    detailed: wantsDetailedResponse(topic)
+    detailed: wantsDetailedResponse(topic),
+    imageSummary
   });
 }
 
@@ -244,7 +302,8 @@ export async function chatWithAssistant({ message, context }) {
       tone: "Helpful and clear",
       optimize: true,
       format: detectContentFormat(message),
-      detailed: wantsDetailedResponse(message)
+      detailed: wantsDetailedResponse(message),
+      imageSummary: ""
     });
   }
 
@@ -285,11 +344,12 @@ export async function generateOpenRouterCaption({ topic, platform, tone }) {
     "Keep it concise, readable, and clean.",
     "Use short lines and natural spacing.",
     "Do not generate multiple options.",
+    "Avoid large text blocks, separators like ---, and unnecessary hashtags.",
     format === "caption"
       ? "For captions, write 2 to 4 short lines and include 3 to 5 relevant hashtags only if needed."
       : format === "script"
-        ? "For scripts, use Hook:, Main Content:, and Call to Action:."
-        : "For carousels, use Slide 1:, Slide 2:, and continue only when needed.",
+        ? "For scripts, use Hook, Main Content, and Call to Action."
+        : "For carousels, use Slide 1, Slide 2, and continue only when needed.",
     'Return strict JSON only in this format: {"caption":"...","hashtags":["#tag1","#tag2"]}'
   ].join(" ");
 

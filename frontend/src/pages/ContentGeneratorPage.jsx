@@ -4,6 +4,7 @@ import { api } from "../services/api";
 
 function ContentGeneratorPage() {
   const [hashtags, setHashtags] = useState([]);
+  const [imageFile, setImageFile] = useState(null);
   const [form, setForm] = useState({
     topic: "",
     platform: "Instagram",
@@ -27,12 +28,17 @@ function ContentGeneratorPage() {
     setError("");
 
     try {
-      const data = await api.generateContent({
-        topic: form.topic,
-        platform: form.platform,
-        tone: form.tone,
-        optimize: form.optimize
-      });
+      const payload = new FormData();
+      payload.append("topic", form.topic);
+      payload.append("platform", form.platform);
+      payload.append("tone", form.tone);
+      payload.append("optimize", String(form.optimize));
+
+      if (imageFile) {
+        payload.append("image", imageFile);
+      }
+
+      const data = await api.generateContent(payload);
       setOutput(data.data?.caption || "No caption returned.");
       setHashtags(data.data?.hashtags || []);
       setIsEditing(false);
@@ -41,6 +47,11 @@ function ContentGeneratorPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleImageUpload = (event) => {
+    const file = event.target.files?.[0] || null;
+    setImageFile(file);
   };
 
   const handleCopy = async () => {
@@ -82,6 +93,18 @@ function ContentGeneratorPage() {
             className="h-28 w-full rounded-3xl border border-gray-200 bg-white px-5 py-4 text-sm text-gray-900 outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-white"
             placeholder="What should your post be about?"
           />
+        </label>
+
+        <label className="block space-y-2">
+          <span className="text-sm font-semibold uppercase tracking-[0.08em] text-studio-primary">Reference Image</span>
+          <div className="rounded-3xl border border-dashed border-gray-300 bg-white p-4 text-sm text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">
+            <input type="file" accept="image/*" onChange={handleImageUpload} className="block w-full text-sm" />
+            <p className="mt-2 whitespace-pre-line">
+              {imageFile
+                ? `Using image context: ${imageFile.name}`
+                : "Optional. Upload an image and the AI will use it as visual context for captions, scripts, and content."}
+            </p>
+          </div>
         </label>
 
         <div className="grid grid-cols-2 gap-4">

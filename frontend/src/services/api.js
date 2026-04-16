@@ -15,10 +15,11 @@ export function clearAuthToken() {
 
 async function request(path, options = {}) {
   const token = getAuthToken();
+  const isFormData = options.body instanceof FormData;
   const response = await fetch(`${API_BASE_URL}${path}`, {
     headers: {
-      "Content-Type": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(isFormData ? {} : { "Content-Type": "application/json" }),
       ...(options.headers || {})
     },
     ...options
@@ -52,9 +53,16 @@ export const api = {
   generateAICaption: (payload) =>
     request("/ai/generate-caption", { method: "POST", body: JSON.stringify(payload) }),
   generateContent: (payload) =>
-    request("/generate-content", { method: "POST", body: JSON.stringify(payload) }),
+    payload instanceof FormData
+      ? request("/generate-content", { method: "POST", body: payload })
+      : request("/generate-content", { method: "POST", body: JSON.stringify(payload) }),
   generateImage: (payload) =>
     request("/generate-image", { method: "POST", body: JSON.stringify(payload) }),
+  getImages: () => request("/images"),
+  toggleFavoriteImage: (id) => request(`/images/${id}/favorite`, { method: "PATCH" }),
+  reorderImages: (items) =>
+    request("/images/reorder", { method: "PATCH", body: JSON.stringify({ items }) }),
+  deleteImage: (id) => request(`/images/${id}`, { method: "DELETE" }),
   chat: (payload) => request("/chat", { method: "POST", body: JSON.stringify(payload) }),
   schedulePost: (payload) =>
     request("/schedule-post", { method: "POST", body: JSON.stringify(payload) }),

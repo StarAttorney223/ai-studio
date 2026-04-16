@@ -5,6 +5,7 @@ import chatRoutes from "./chat.routes.js";
 import scheduleRoutes from "./schedule.routes.js";
 import analyticsRoutes from "./analytics.routes.js";
 import postRoutes from "./posts.routes.js";
+import imageRoutes from "./images.routes.js";
 
 const router = Router();
 
@@ -14,5 +15,6 @@ router.use(aiRoutes);
 router.use(scheduleRoutes);
 router.use(analyticsRoutes);
 router.use(postRoutes);
+router.use(imageRoutes);
 
 export default router;

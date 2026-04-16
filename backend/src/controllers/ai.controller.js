@@ -1,15 +1,30 @@
 import { GeneratedContent } from "../models/GeneratedContent.js";
 import { generateCaption, chatWithAssistant, generateOpenRouterCaption } from "../services/ai.service.js";
 import { generateImageFromPrompt } from "../services/image.service.js";
+import { createGeneratedImage, getNextImageOrder } from "../services/generated-image.service.js";
 
 export async function generateContentController(req, res) {
   const { topic, platform, tone, optimize } = req.body;
+  const uploadedImage = req.file
+    ? {
+        originalName: req.file.originalname,
+        mimeType: req.file.mimetype,
+        path: req.file.path,
+        url: `/uploads/${req.file.filename}`
+      }
+    : null;
 
   if (!topic || !platform || !tone) {
     return res.status(400).json({ success: false, message: "topic, platform and tone are required" });
   }
 
-  const caption = await generateCaption({ topic, platform, tone, optimize: Boolean(optimize) });
+  const caption = await generateCaption({
+    topic,
+    platform,
+    tone,
+    optimize: Boolean(optimize),
+    imageContext: uploadedImage
+  });
 
   const saved = await GeneratedContent.create({ topic, platform, tone, caption });
 
@@ -18,7 +33,8 @@ export async function generateContentController(req, res) {
     data: {
       id: saved._id,
       caption,
-      hashtags: (caption.match(/#[\w-]+/g) || []).slice(0, 5)
+      hashtags: (caption.match(/#[\w-]+/g) || []).slice(0, 5),
+      imageContext: uploadedImage?.url || ""
     }
   });
 }
@@ -46,13 +62,28 @@ export async function generateImageController(req, res) {
     textOverlay
   });
 
+  const savedImage = await createGeneratedImage({
+    imageUrl,
+    prompt,
+    aspectRatio,
+    type: mode,
+    textOverlay,
+    order: await getNextImageOrder()
+  });
+
   return res.status(200).json({
     success: true,
     data: {
+      id: savedImage._id,
       imageUrl,
       prompt,
+      aspectRatio,
       mode,
-      textOverlay
+      textOverlay,
+      type: savedImage.type,
+      createdAt: savedImage.createdAt,
+      isFavorite: savedImage.isFavorite,
+      order: savedImage.order
     }
   });
 }
