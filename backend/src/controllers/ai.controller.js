@@ -10,7 +10,8 @@ export async function generateContentController(req, res) {
         originalName: req.file.originalname,
         mimeType: req.file.mimetype,
         path: req.file.path,
-        url: `/uploads/${req.file.filename}`
+        url: req.file.path,
+        publicId: req.file.filename
       }
     : null;
 
@@ -46,8 +47,12 @@ export async function generateImageController(req, res) {
     style = "Photorealistic",
     lighting = "Golden Hour",
     mode = "image",
+    type = "image",
     textOverlay = ""
   } = req.body;
+  const isThumbnail = type === "thumbnail" || mode === "thumbnail";
+  const resolvedAspectRatio = isThumbnail ? "16:9" : aspectRatio || "1:1";
+  const resolvedType = isThumbnail ? "thumbnail" : "image";
 
   if (!prompt) {
     return res.status(400).json({ success: false, message: "prompt is required" });
@@ -55,18 +60,20 @@ export async function generateImageController(req, res) {
 
   const imageUrl = await generateImageFromPrompt({
     prompt,
-    aspectRatio,
+    aspectRatio: resolvedAspectRatio,
     style,
     lighting,
     mode,
+    type: resolvedType,
     textOverlay
   });
 
   const savedImage = await createGeneratedImage({
-    imageUrl,
+    imageUrl: imageUrl.url,
+    imagePublicId: imageUrl.publicId,
     prompt,
-    aspectRatio,
-    type: mode,
+    aspectRatio: resolvedAspectRatio,
+    type: resolvedType,
     textOverlay,
     order: await getNextImageOrder()
   });
@@ -75,15 +82,29 @@ export async function generateImageController(req, res) {
     success: true,
     data: {
       id: savedImage._id,
-      imageUrl,
+      imageUrl: savedImage.imageUrl,
       prompt,
-      aspectRatio,
-      mode,
+      aspectRatio: resolvedAspectRatio,
+      mode: resolvedType,
       textOverlay,
       type: savedImage.type,
       createdAt: savedImage.createdAt,
       isFavorite: savedImage.isFavorite,
       order: savedImage.order
+    }
+  });
+}
+
+export async function uploadImageController(req, res) {
+  if (!req.file?.path) {
+    return res.status(400).json({ success: false, message: "image is required" });
+  }
+
+  return res.status(200).json({
+    success: true,
+    data: {
+      url: req.file.path,
+      publicId: req.file.filename
     }
   });
 }

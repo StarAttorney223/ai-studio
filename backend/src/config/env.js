@@ -13,5 +13,8 @@ export const env = {
   openAiApiKey: process.env.OPENAI_API_KEY || "",
   openAiModel: process.env.OPENAI_MODEL || "gpt-4o-mini",
   openRouterApiKey: process.env.OPENROUTER_API_KEY || "",
-  openRouterModel: process.env.OPENROUTER_MODEL || "mistralai/mistral-7b-instruct:free"
+  openRouterModel: process.env.OPENROUTER_MODEL || "mistralai/mistral-7b-instruct:free",
+  cloudinaryName: process.env.CLOUDINARY_NAME || "",
+  cloudinaryKey: process.env.CLOUDINARY_KEY || "",
+  cloudinarySecret: process.env.CLOUDINARY_SECRET || ""
 };

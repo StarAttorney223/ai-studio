@@ -10,8 +10,6 @@ import {
 import { DndContext, closestCenter, useDraggable, useDroppable } from "@dnd-kit/core";
 import { api } from "../services/api";
 
-const STORAGE_KEY = "studio-recent-generated-images";
-const API_ORIGIN = (import.meta.env.VITE_API_BASE_URL || "http://localhost:5000/api").replace(/\/api\/?$/, "");
 const THUMBNAIL_PROMPT_SUFFIX =
   "high contrast, bold lighting, cinematic, youtube thumbnail style, vibrant colors, sharp focus, dramatic composition";
 
@@ -44,11 +42,7 @@ function normalizeStoredItem(item, index = 0) {
 }
 
 function resolveImageUrl(imageUrl) {
-  if (!imageUrl) {
-    return "";
-  }
-
-  return imageUrl.startsWith("/uploads/") ? `${API_ORIGIN}${imageUrl}` : imageUrl;
+  return imageUrl || "";
 }
 
 function reorderItems(items, activeId, overId) {
@@ -194,14 +188,7 @@ function ImageGeneratorPage() {
   const [selectedImage, setSelectedImage] = useState(null);
 
   useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      try {
-        setImages(JSON.parse(saved).map(normalizeStoredItem));
-      } catch {
-        setImages([]);
-      }
-    }
+    localStorage.removeItem("studio-recent-generated-images");
   }, []);
 
   useEffect(() => {
@@ -211,9 +198,8 @@ function ImageGeneratorPage() {
         const response = await api.getImages();
         const nextImages = (response.data || []).map(normalizeStoredItem);
         setImages(nextImages);
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(nextImages));
       } catch {
-        // Preserve local fallback if backend images are unavailable.
+        setImages([]);
       } finally {
         setLoadingImages(false);
       }
@@ -240,7 +226,6 @@ function ImageGeneratorPage() {
 
   const syncImages = (nextImages) => {
     setImages(nextImages);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(nextImages));
   };
 
   const handleGenerate = async () => {
@@ -250,10 +235,11 @@ function ImageGeneratorPage() {
     try {
       const data = await api.generateImage({
         prompt,
-        aspectRatio,
+        aspectRatio: mode === "thumbnail" ? "16:9" : aspectRatio,
         style,
         lighting,
         mode,
+        type: mode === "thumbnail" ? "thumbnail" : "image",
         textOverlay
       });
 
@@ -261,7 +247,7 @@ function ImageGeneratorPage() {
         id: data.data?.id,
         imageUrl: data.data?.imageUrl || "",
         prompt,
-        aspectRatio,
+        aspectRatio: data.data?.aspectRatio || (mode === "thumbnail" ? "16:9" : aspectRatio),
         createdAt: data.data?.createdAt || new Date().toISOString(),
         type: data.data?.type || mode,
         textOverlay: mode === "thumbnail" ? textOverlay.trim() : "",
@@ -387,7 +373,12 @@ function ImageGeneratorPage() {
         />
 
         <div className="mt-5 grid gap-3 lg:grid-cols-2 xl:grid-cols-[140px_160px_160px_1fr_200px]">
-          <select value={aspectRatio} onChange={(e) => setAspectRatio(e.target.value)} className="h-11 rounded-full bg-gray-100 px-4 text-sm text-gray-900 dark:bg-gray-700 dark:text-white">
+          <select
+            value={mode === "thumbnail" ? "16:9" : aspectRatio}
+            onChange={(e) => setAspectRatio(e.target.value)}
+            disabled={mode === "thumbnail"}
+            className="h-11 rounded-full bg-gray-100 px-4 text-sm text-gray-900 outline-none disabled:cursor-not-allowed disabled:opacity-60 dark:bg-gray-700 dark:text-white"
+          >
             <option value="1:1">1:1 (Square)</option>
             <option value="16:9">16:9 (Landscape)</option>
             <option value="9:16">9:16 (Reel / Story)</option>
@@ -435,6 +426,7 @@ function ImageGeneratorPage() {
             <p className="mt-1 whitespace-pre-line">
               Your prompt is automatically enhanced with: {THUMBNAIL_PROMPT_SUFFIX}
             </p>
+            <p className="mt-2 font-medium">Thumbnail output is locked to true 16:9 for generation and display.</p>
           </div>
         )}
 
@@ -525,7 +517,13 @@ function ImageGeneratorPage() {
           </div>
         ) : (
           <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-            <div className="grid grid-cols-1 items-start gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+            <div
+              className={`grid items-start gap-4 ${
+                filter === "thumbnails"
+                  ? "grid-cols-1 md:grid-cols-2"
+                  : "grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4"
+              }`}
+            >
               {filteredImages.map((item) => (
                 <GalleryCard
                   key={item.id}
@@ -548,7 +546,7 @@ function ImageGeneratorPage() {
             <div className="mb-4 flex items-center justify-between gap-3">
               <div>
                 <p className="text-sm font-semibold uppercase tracking-[0.08em] text-studio-primary">
-                  {selectedImage.type === "thumbnail" ? "Thumbnail" : "Image"} · {selectedImage.aspectRatio}
+                  {selectedImage.type === "thumbnail" ? "Thumbnail" : "Image"} | {selectedImage.aspectRatio}
                 </p>
                 {selectedImage.prompt && (
                   <p className="mt-1 max-w-3xl whitespace-pre-line text-sm text-gray-600 dark:text-gray-300">

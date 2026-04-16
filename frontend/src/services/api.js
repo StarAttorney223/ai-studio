@@ -58,6 +58,8 @@ export const api = {
       : request("/generate-content", { method: "POST", body: JSON.stringify(payload) }),
   generateImage: (payload) =>
     request("/generate-image", { method: "POST", body: JSON.stringify(payload) }),
+  uploadImage: (payload) =>
+    request("/upload-image", { method: "POST", body: payload }),
   getImages: () => request("/images"),
   toggleFavoriteImage: (id) => request(`/images/${id}/favorite`, { method: "PATCH" }),
   reorderImages: (items) =>

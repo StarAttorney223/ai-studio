@@ -1,4 +1,5 @@
 import { GeneratedImage } from "../models/GeneratedImage.js";
+import cloudinary from "../config/cloudinary.js";
 
 export async function listGeneratedImages(limit = 200) {
   return GeneratedImage.find()
@@ -17,7 +18,13 @@ export async function createGeneratedImage(payload) {
 }
 
 export async function deleteGeneratedImageById(id) {
-  return GeneratedImage.findByIdAndDelete(id).lean();
+  const deleted = await GeneratedImage.findByIdAndDelete(id).lean();
+
+  if (deleted?.imagePublicId) {
+    await cloudinary.uploader.destroy(deleted.imagePublicId, { resource_type: "image" }).catch(() => null);
+  }
+
+  return deleted;
 }
 
 export async function toggleFavoriteImageById(id) {

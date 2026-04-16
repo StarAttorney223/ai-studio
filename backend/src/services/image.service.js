@@ -1,4 +1,6 @@
-﻿import { env } from "../config/env.js";
+import sharp from "sharp";
+import cloudinary from "../config/cloudinary.js";
+import { env } from "../config/env.js";
 
 const HF_API_URL = "https://router.huggingface.co/hf-inference/models";
 
@@ -19,17 +21,76 @@ function getDimensions(aspectRatio) {
   return map[aspectRatio] || map["16:9"];
 }
 
-function buildPollinationsUrl(prompt, aspectRatio) {
-  const seed = Math.floor(Math.random() * 1000000);
-  const { width, height } = getDimensions(aspectRatio);
-  return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?seed=${seed}&width=${width}&height=${height}&nologo=true`;
+function getGenerationConfig({ aspectRatio, mode, type }) {
+  const isThumbnail = type === "thumbnail" || mode === "thumbnail";
+  let width = 1024;
+  let height = 1024;
+  let resolvedAspectRatio = aspectRatio || "1:1";
+
+  if (isThumbnail) {
+    width = 1280;
+    height = 720;
+    resolvedAspectRatio = "16:9";
+  } else {
+    const dimensions = getDimensions(aspectRatio || "1:1");
+    width = dimensions.width;
+    height = dimensions.height;
+  }
+
+  return {
+    isThumbnail,
+    width,
+    height,
+    aspectRatio: resolvedAspectRatio
+  };
 }
 
-async function toDataUrlFromResponse(response) {
-  const contentType = response.headers.get("content-type") || "image/png";
+function buildPollinationsUrl(prompt, generationConfig) {
+  const seed = Math.floor(Math.random() * 1000000);
+  return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?seed=${seed}&width=${generationConfig.width}&height=${generationConfig.height}&nologo=true`;
+}
+
+async function enforceExactDimensions(arrayBuffer, { width, height }) {
+  return sharp(Buffer.from(arrayBuffer))
+    .resize(width, height, {
+      fit: "contain",
+      background: { r: 0, g: 0, b: 0, alpha: 1 }
+    })
+    .png()
+    .toBuffer();
+}
+
+async function uploadBufferToCloudinary(buffer, { folder, prompt, aspectRatio, type }) {
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      {
+        folder,
+        resource_type: "image",
+        format: "png",
+        tags: ["studio", type || "image", aspectRatio || "unknown"],
+        context: prompt ? `prompt=${prompt}` : undefined
+      },
+      (error, result) => {
+        if (error || !result) {
+          reject(error || new Error("Cloud upload failed"));
+          return;
+        }
+
+        resolve({
+          url: result.secure_url,
+          publicId: result.public_id
+        });
+      }
+    );
+
+    stream.end(buffer);
+  });
+}
+
+async function uploadResponseToCloudinary(response, generationConfig, meta) {
   const arrayBuffer = await response.arrayBuffer();
-  const base64 = Buffer.from(arrayBuffer).toString("base64");
-  return `data:${contentType};base64,${base64}`;
+  const resizedBuffer = await enforceExactDimensions(arrayBuffer, generationConfig);
+  return uploadBufferToCloudinary(resizedBuffer, meta);
 }
 
 function buildImagePrompt({ prompt, aspectRatio, style, lighting, mode, textOverlay }) {
@@ -64,9 +125,18 @@ export async function generateImageFromPrompt({
   style,
   lighting,
   mode = "image",
+  type = "image",
   textOverlay = ""
 }) {
-  const input = buildImagePrompt({ prompt, aspectRatio, style, lighting, mode, textOverlay });
+  const generationConfig = getGenerationConfig({ aspectRatio, mode, type });
+  const input = buildImagePrompt({
+    prompt,
+    aspectRatio: generationConfig.aspectRatio,
+    style,
+    lighting,
+    mode: generationConfig.isThumbnail ? "thumbnail" : mode,
+    textOverlay
+  });
 
   const candidateModels = [
     env.huggingFaceImageModel,
@@ -75,6 +145,8 @@ export async function generateImageFromPrompt({
   ].filter(Boolean);
 
   let lastError = "Image generation failed";
+
+  console.log("Generated size:", generationConfig.width, generationConfig.height);
 
   if (env.huggingFaceApiKey) {
     for (const model of candidateModels) {
@@ -85,11 +157,23 @@ export async function generateImageFromPrompt({
             Authorization: `Bearer ${env.huggingFaceApiKey}`,
             "Content-Type": "application/json"
           },
-          body: JSON.stringify({ inputs: input })
+          body: JSON.stringify({
+            inputs: input,
+            parameters: {
+              width: generationConfig.width,
+              height: generationConfig.height,
+              aspect_ratio: generationConfig.isThumbnail ? "16:9" : generationConfig.aspectRatio
+            }
+          })
         });
 
         if (response.ok) {
-          return toDataUrlFromResponse(response);
+          return uploadResponseToCloudinary(response, generationConfig, {
+            folder: "studio-images/generated",
+            prompt,
+            aspectRatio: generationConfig.aspectRatio,
+            type
+          });
         }
 
         const errorPayload = await response.json().catch(() => ({}));
@@ -100,9 +184,14 @@ export async function generateImageFromPrompt({
     }
   }
 
-  const fallbackResponse = await fetch(buildPollinationsUrl(input, aspectRatio)).catch(() => null);
+  const fallbackResponse = await fetch(buildPollinationsUrl(input, generationConfig)).catch(() => null);
   if (fallbackResponse?.ok) {
-    return toDataUrlFromResponse(fallbackResponse);
+    return uploadResponseToCloudinary(fallbackResponse, generationConfig, {
+      folder: "studio-images/generated",
+      prompt,
+      aspectRatio: generationConfig.aspectRatio,
+      type
+    });
   }
 
   throw new Error(lastError);

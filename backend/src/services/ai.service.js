@@ -1,4 +1,3 @@
-import fs from "fs/promises";
 import { env } from "../config/env.js";
 
 const HF_API_URL = "https://router.huggingface.co/hf-inference/models";
@@ -50,7 +49,7 @@ function stripHashtags(content = "") {
 }
 
 async function describeUploadedImage(imageContext) {
-  if (!imageContext?.path) {
+  if (!imageContext?.url) {
     return "";
   }
 
@@ -59,9 +58,6 @@ async function describeUploadedImage(imageContext) {
   }
 
   try {
-    const fileBuffer = await fs.readFile(imageContext.path);
-    const dataUrl = `data:${imageContext.mimeType || "image/png"};base64,${fileBuffer.toString("base64")}`;
-
     const response = await fetch(OPENAI_URL, {
       method: "POST",
       headers: {
@@ -80,7 +76,7 @@ async function describeUploadedImage(imageContext) {
             role: "user",
             content: [
               { type: "text", text: "Analyze this image for content generation context." },
-              { type: "image_url", image_url: { url: dataUrl } }
+              { type: "image_url", image_url: { url: imageContext.url } }
             ]
           }
         ],
