@@ -45,6 +45,24 @@ function resolveImageUrl(imageUrl) {
   return imageUrl || "";
 }
 
+function sanitizeDownloadFilename(filename = "image") {
+  return String(filename)
+    .trim()
+    .replace(/\.[a-z0-9]+$/i, "")
+    .replace(/[^a-z0-9-_]+/gi, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "") || "image";
+}
+
+function getDownloadUrl(url, filename = "image") {
+  if (!url || !url.includes("/upload/")) {
+    return url || "";
+  }
+
+  const safeFilename = encodeURIComponent(sanitizeDownloadFilename(filename));
+  return url.replace("/upload/", `/upload/fl_attachment:${safeFilename}/`);
+}
+
 function matchesFilter(item, filter) {
   if (filter === "all") return true;
   if (filter === "reels") return item.aspectRatio === "9:16";
@@ -246,6 +264,9 @@ function ImageGeneratorPage() {
     [filter, images]
   );
 
+  const selectedImageDownloadName = selectedImage
+    ? `studio-${selectedImage.type}-${selectedImage.id}`
+    : "studio-image";
   const isUniformGrid = filter === "all";
 
   const syncImages = (nextImages) => {
@@ -610,8 +631,7 @@ function ImageGeneratorPage() {
                 </div>
               )}
               <a
-                href={resolveImageUrl(selectedImage.imageUrl)}
-                download={`studio-${selectedImage.type}-${selectedImage.id}.png`}
+                href={getDownloadUrl(resolveImageUrl(selectedImage.imageUrl), selectedImageDownloadName)}
                 className="absolute bottom-3 right-3 inline-flex h-10 items-center gap-2 rounded-full bg-violet-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-violet-500"
               >
                 <Download size={16} /> Download

@@ -23,14 +23,16 @@ function Sidebar() {
   const { user } = useAuth();
 
   return (
-    <aside className="studio-sidebar flex h-full flex-col border-r border-gray-200 bg-white px-5 py-6 text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-white">
-      <div className="mb-8 flex items-center gap-3">
-        <div className="grid h-9 w-9 place-items-center rounded-full bg-studio-primary text-white">
-          <Sparkles size={17} />
-        </div>
-        <div>
-          <p className="text-3 font-semibold leading-none text-gray-900 dark:text-white">Ether Studio</p>
-          <p className="mt-1 text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-300">AI content engine</p>
+    <aside className="studio-sidebar flex h-full flex-col border-r border-gray-200 bg-white px-5 py-6 text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-white lg:sticky lg:top-0 lg:h-screen lg:self-start lg:overflow-y-auto studio-scrollbar">
+      <div className="mb-8 flex items-center gap-3 px-1 py-1">
+        <img
+          src="/logo.png"
+          alt="Ether Logo"
+          className="h-14 w-14 object-contain transition-transform duration-200 hover:scale-105 [filter:drop-shadow(0_2px_6px_rgba(0,0,0,0.2))] dark:[filter:none]"
+        />
+        <div className="flex flex-col leading-tight">
+          <p className="text-base font-semibold text-gray-900 dark:text-white">Ether Studio</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">AI Content Engine</p>
         </div>
       </div>
 
@@ -42,7 +44,7 @@ function Sidebar() {
         Create New Post
       </Link>
 
-      <nav className="space-y-1.5">
+      <nav className="flex-1 space-y-1.5">
         {navItems.map((item) => {
           const Icon = item.icon;
           return (
