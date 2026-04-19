@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
-import { CalendarClock, ImagePlus, Sparkles, Video } from "lucide-react";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { CalendarClock, ImagePlus, Linkedin, LoaderCircle, Sparkles, Video } from "lucide-react";
 import BackButton from "../components/BackButton";
 import Toast from "../components/common/Toast";
 import PostPreview from "../components/create-post/PostPreview";
@@ -28,6 +28,7 @@ function toLocalDateParts(isoString) {
 
 function CreatePostPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { id } = useParams();
   const isEditMode = Boolean(id);
 
@@ -43,6 +44,8 @@ function CreatePostPage() {
   const [loadingAction, setLoadingAction] = useState("");
   const [loadingPost, setLoadingPost] = useState(false);
   const [generatingAi, setGeneratingAi] = useState(false);
+  const [linkedinStatus, setLinkedinStatus] = useState({ connected: false, loading: false, loaded: false });
+  const [linkedinAction, setLinkedinAction] = useState("");
   const [toast, setToast] = useState({ message: "", type: "success" });
   const [postData, setPostData] = useState({
     caption: "",
@@ -56,6 +59,7 @@ function CreatePostPage() {
   });
 
   const isYouTubeSelected = platforms.includes("YouTube");
+  const isLinkedInSelected = platforms.includes("LinkedIn");
   const previewablePlatforms = useMemo(
     () => platformOptions.filter((platform) => platforms.includes(platform)),
     [platforms]
@@ -119,6 +123,70 @@ function CreatePostPage() {
 
     loadPostForEdit();
   }, [id, isEditMode]);
+
+  useEffect(() => {
+    if (!isLinkedInSelected) {
+      return;
+    }
+
+    let isMounted = true;
+
+    async function loadLinkedInStatus() {
+      setLinkedinStatus((prev) => ({ ...prev, loading: true }));
+
+      try {
+        const response = await api.getLinkedInStatus();
+        if (!isMounted) return;
+
+        setLinkedinStatus({
+          connected: Boolean(response.data?.connected),
+          loading: false,
+          loaded: true
+        });
+      } catch {
+        if (!isMounted) return;
+
+        setLinkedinStatus({
+          connected: false,
+          loading: false,
+          loaded: true
+        });
+      }
+    }
+
+    loadLinkedInStatus();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [isLinkedInSelected]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const linkedinState = params.get("linkedin");
+    const message = params.get("message");
+
+    if (!linkedinState) {
+      return;
+    }
+
+    if (linkedinState === "connected") {
+      setLinkedinStatus({ connected: true, loading: false, loaded: true });
+      setToast({ message: "LinkedIn account connected.", type: "success" });
+    } else if (linkedinState === "error") {
+      setToast({ message: message || "LinkedIn connection failed.", type: "error" });
+    }
+
+    params.delete("linkedin");
+    params.delete("message");
+    navigate(
+      {
+        pathname: location.pathname,
+        search: params.toString() ? `?${params.toString()}` : ""
+      },
+      { replace: true }
+    );
+  }, [location.pathname, location.search, navigate]);
 
   const scheduledDateTime = useMemo(() => {
     if (!scheduleDate || !scheduleTime) return null;
@@ -226,6 +294,17 @@ function CreatePostPage() {
     setStatusText("");
 
     try {
+      if (!isEditMode && status === "published" && isLinkedInSelected) {
+        if (!linkedinStatus.connected) {
+          throw new Error("Connect your LinkedIn account before publishing.");
+        }
+
+        await api.publishLinkedInPost({
+          content: normalizedContent,
+          mediaUrl: postData.media
+        });
+      }
+
       const payload = {
         content: normalizedContent,
         title: postData.title.trim(),
@@ -245,10 +324,21 @@ function CreatePostPage() {
         await api.createPost(payload);
         if (status === "draft") setToast({ message: "Draft saved.", type: "success" });
         if (status === "scheduled") setToast({ message: "Post scheduled successfully.", type: "success" });
-        if (status === "published") setToast({ message: "Post published (simulated).", type: "success" });
+        if (status === "published") {
+          setToast({
+            message: isLinkedInSelected ? "Post published to LinkedIn." : "Post published (simulated).",
+            type: "success"
+          });
+        }
       }
 
-      setStatusText(isEditMode ? "Post updated successfully." : "Saved successfully.");
+      setStatusText(
+        isEditMode
+          ? "Post updated successfully."
+          : status === "published" && isLinkedInSelected
+            ? "LinkedIn publish succeeded and the post was saved locally."
+            : "Saved successfully."
+      );
 
       if (!isEditMode && status !== "draft") {
         navigate("/dashboard");
@@ -258,6 +348,18 @@ function CreatePostPage() {
       setToast({ message: error.message || "Unable to save post.", type: "error" });
     } finally {
       setLoadingAction("");
+    }
+  };
+
+  const handleLinkedInConnect = async () => {
+    setLinkedinAction("connect");
+
+    try {
+      const response = await api.getLinkedInAuthUrl(location.pathname);
+      window.location.href = response.data.authUrl;
+    } catch (error) {
+      setToast({ message: error.message || "Unable to start LinkedIn connection.", type: "error" });
+      setLinkedinAction("");
     }
   };
 
@@ -404,6 +506,37 @@ function CreatePostPage() {
             )}
           </div>
 
+          {isLinkedInSelected && (
+            <div className="rounded-[2rem] border border-gray-200 bg-white p-5 shadow-soft dark:border-gray-700 dark:bg-gray-800">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-gray-900 dark:text-white">LinkedIn Connection</p>
+                  <p className="mt-1 text-sm text-gray-500 dark:text-gray-300">
+                    {linkedinStatus.connected
+                      ? "Your LinkedIn account is connected and ready to publish."
+                      : "Connect LinkedIn once to publish directly from this post editor."}
+                  </p>
+                </div>
+                <button
+                  onClick={handleLinkedInConnect}
+                  disabled={linkedinAction === "connect" || linkedinStatus.loading}
+                  className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition ${
+                    linkedinStatus.connected
+                      ? "bg-[#eef3ff] text-[#0a66c2] dark:bg-[#173456] dark:text-white"
+                      : "bg-[#0a66c2] text-white"
+                  } disabled:opacity-60`}
+                >
+                  {linkedinAction === "connect" || linkedinStatus.loading ? (
+                    <LoaderCircle size={16} className="animate-spin" />
+                  ) : (
+                    <Linkedin size={16} />
+                  )}
+                  {linkedinStatus.connected ? "Reconnect LinkedIn" : "Connect LinkedIn"}
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="space-y-4">
             <p className="text-sm font-semibold uppercase tracking-[0.08em] text-studio-primary">Media Assets</p>
 
@@ -502,7 +635,9 @@ function CreatePostPage() {
                 ? "Saving..."
                 : isEditMode
                   ? "Update Post"
-                  : "Publish Now"}
+                  : isLinkedInSelected
+                    ? "Publish to LinkedIn"
+                    : "Publish Now"}
             </button>
           </div>
 

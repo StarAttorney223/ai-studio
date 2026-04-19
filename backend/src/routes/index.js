@@ -6,6 +6,7 @@ import scheduleRoutes from "./schedule.routes.js";
 import analyticsRoutes from "./analytics.routes.js";
 import postRoutes from "./posts.routes.js";
 import imageRoutes from "./images.routes.js";
+import linkedinRoutes from "./linkedin.routes.js";
 
 const router = Router();
 
@@ -16,5 +17,6 @@ router.use(scheduleRoutes);
 router.use(analyticsRoutes);
 router.use(postRoutes);
 router.use(imageRoutes);
+router.use(linkedinRoutes);
 
 export default router;

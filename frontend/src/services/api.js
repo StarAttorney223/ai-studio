@@ -13,6 +13,10 @@ export function clearAuthToken() {
   localStorage.removeItem(AUTH_TOKEN_KEY);
 }
 
+export function getApiBaseUrl() {
+  return API_BASE_URL;
+}
+
 async function request(path, options = {}) {
   const token = getAuthToken();
   const isFormData = options.body instanceof FormData;
@@ -52,6 +56,10 @@ export const api = {
   createPost: (payload) => request("/posts", { method: "POST", body: JSON.stringify(payload) }),
   updatePost: (id, payload) => request(`/posts/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
   deletePost: (id) => request(`/posts/${id}`, { method: "DELETE" }),
+  getLinkedInAuthUrl: (redirectPath = "/create-post") =>
+    request(`/auth/linkedin?redirectPath=${encodeURIComponent(redirectPath)}`),
+  getLinkedInStatus: () => request("/auth/linkedin/status"),
+  publishLinkedInPost: (payload) => request("/post/linkedin", { method: "POST", body: JSON.stringify(payload) }),
   generateAICaption: (payload) =>
     request("/ai/generate-caption", { method: "POST", body: JSON.stringify(payload) }),
   generateContent: (payload) =>

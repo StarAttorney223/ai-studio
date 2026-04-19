@@ -16,5 +16,9 @@ export const env = {
   openRouterModel: process.env.OPENROUTER_MODEL || "mistralai/mistral-7b-instruct:free",
   cloudinaryName: process.env.CLOUDINARY_NAME || "",
   cloudinaryKey: process.env.CLOUDINARY_KEY || "",
-  cloudinarySecret: process.env.CLOUDINARY_SECRET || ""
+  cloudinarySecret: process.env.CLOUDINARY_SECRET || "",
+  linkedinClientId: process.env.LINKEDIN_CLIENT_ID || "",
+  linkedinClientSecret: process.env.LINKEDIN_CLIENT_SECRET || "",
+  linkedinRedirectUri: process.env.LINKEDIN_REDIRECT_URI || "http://localhost:5000/api/auth/linkedin/callback",
+  frontendUrl: process.env.FRONTEND_URL || "http://localhost:5173"
 };
