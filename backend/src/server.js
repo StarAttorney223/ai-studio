@@ -7,7 +7,7 @@ async function startServer() {
     await connectDatabase();
 
     app.listen(env.port, () => {
-      console.log(`Backend running on http://localhost:${env.port}`);
+      console.log(`Backend running on port ${env.port}`);
     });
   } catch (error) {
     console.error("Failed to start backend", error);
