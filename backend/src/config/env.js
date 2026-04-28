@@ -21,5 +21,6 @@ export const env = {
   linkedinClientSecret: process.env.LINKEDIN_CLIENT_SECRET || "",
   linkedinRedirectUri: process.env.LINKEDIN_REDIRECT_URI || "http://localhost:5000/api/auth/linkedin/callback",
   frontendUrl: process.env.FRONTEND_URL || "http://localhost:5173",
-  gnewsApiKey: process.env.GNEWS_API_KEY || ""
+  gnewsApiKey: process.env.GNEWS_API_KEY || "6deed301c74fb3a84d073b79c06b267c",
+  geminiApiKey: process.env.GEMINI_API_KEY || "AIzaSyAINWRHFOCYs_p9xjY4qyWQrqJhlevcmTY"
 };

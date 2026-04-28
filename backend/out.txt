@@ -1,0 +1,14 @@
+﻿Status: 200
+{
+  success: true,
+  data: {
+    id: '69f06d406d6e5091280601fe',
+    caption: 'The impact of a successful rescue extends far beyond the immediate removal of a cat from a high-risk environment.\n' +
+      '\n' +
+      'Professional feline rescue requires a strategic approach involving comprehensive veterinary assessment, behavioral rehabilitation, and meticulous foster placement to ensure long-term stability. By prioritizing medical stabilization and socialization, we transition vulnerable animals from crisis to permanent residency. This systematic process not only saves individual lives but also alleviates the strain on municipal shelter systems and improves community animal welfare standards.\n' +
+      '\n' +
+      'Visit the link in our bio to view our current list of adoptable rescues and learn more about our rehabilitation process.',
+    hashtags: [],
+    imageContext: ''
+  }
+}

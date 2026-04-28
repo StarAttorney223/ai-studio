@@ -231,7 +231,7 @@ function ContentGeneratorPage() {
         </label>
 
         <button
-          onClick={handleGenerate}
+          onClick={() => handleGenerate()}
           disabled={loading || !form.topic.trim()}
           className="flex h-14 w-full items-center justify-center gap-2 rounded-full bg-gradient-to-r from-[#6639ec] to-[#9a79ff] text-xl font-semibold text-white transition-all duration-300 hover:scale-[1.01] disabled:opacity-60"
         >

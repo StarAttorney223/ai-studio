@@ -1,9 +1,56 @@
+import fs from "fs";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { env } from "../config/env.js";
 import * as trendingService from "./trending.service.js";
+
+const genAI = env.geminiApiKey ? new GoogleGenerativeAI(env.geminiApiKey) : null;
 
 const HF_API_URL = "https://router.huggingface.co/hf-inference/models";
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const OPENAI_URL = "https://api.openai.com/v1/chat/completions";
+
+async function generateWithGemini({ topic, platform, tone, format, imageContext = null }) {
+  if (!genAI) throw new Error("Gemini API key is missing.");
+
+  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+  
+  const prompt = `
+User request topic: ${topic}
+Target Platform: ${platform}
+Desired Tone: ${tone}
+
+Instructions for multimodal generation:
+- If the user asks to identify something, identify the objects, people, or text in the image.
+- If it's a caption, generate a high-engagement caption based on the image's context.
+- If it's a script, generate a structured video script (Hook, Body, CTA) based on the visuals.
+- If it's for YouTube, provide a long-form description with naturally integrated SEO keywords.
+- Always be visually accurate to what is depicted in the image.
+
+Output structure:
+- Produce clean, structured text.
+- Use natural spacing and line breaks.
+`;
+
+  const parts = [{ text: prompt }];
+
+  if (imageContext && imageContext.path) {
+    try {
+      const imageBuffer = fs.readFileSync(imageContext.path);
+      parts.push({
+        inlineData: {
+          mimeType: imageContext.mimeType || "image/jpeg",
+          data: imageBuffer.toString("base64")
+        }
+      });
+    } catch (err) {
+      console.error("Gemini image conversion failed:", err);
+    }
+  }
+
+  const result = await model.generateContent(parts);
+  const response = await result.response;
+  return response.text().trim();
+}
 
 const CONTENT_REQUEST_PATTERN =
   /\b(generate|write|create|draft|caption|post|script|carousel|thread|copy|content|linkedin post|instagram caption|youtube script|youtube description|ad copy|metadata|description)\b/i;
@@ -115,69 +162,48 @@ async function describeUploadedImage(imageContext) {
 
 function buildContentPrompt({ topic, platform, tone, optimize, format, detailed, imageSummary }) {
   const formatRules = {
-    youtube_description: `
-Write a detailed, discovery-friendly YouTube description (150–300 words).
-Structure:
-- Hook: High-energy opening sentence.
-- Summary: 2 insightful paragraphs about the value provided.
-- SEO Keywords: Top 5 keywords integrated naturally.
-- Call to Action: Clear instruction for viewers.`,
-    
-    short_video_script: `
-Write a high-retention script for a 60-second video (Reel/Short/TikTok).
-Structure:
-- Hook (0-3 sec): Pattern interrupt or bold claim.
-- Main Body: 3-4 punchy, value-dense bullet points.
-- Ending CTA: Fast and clear.`,
-
-    script: `
-Write a professional long-form script.
-Structure:
-- Opening: Set the stage.
-- Main Content: In-depth exploration with headings.
-- Conclusion: Summary and CTA.`,
-
-    linkedin_post: `
-Write a professional, high-authority LinkedIn post.
-Structure:
-- Strong Opening: 1-2 powerful lines.
-- Insightful Body: Use bullet points for readability.
-- Reflection: A closing thought on the topic.
-- CTA: Encourage comments or shares.`,
-
-    carousel: `
-Write content for a 5-10 slide educational carousel.
-Structure:
-- Slide 1: Catchy Title.
-- Slides 2-N: One key insight per slide.
-- Final Slide: Summary and CTA.`,
-
-    caption: `
-Write a high-converting social media caption.
-Structure:
-- Hook: Grab attention.
-- Body: 2-4 lines of engaging context.
-- CTA: Direct the audience.`
+    youtube_description: `Structure needed:
+1. Hook: Catchy opening.
+2. Summary: Clear details about the topic.
+3. Tags/Keywords.
+4. Call to Action.`,
+    short_video_script: `Structure needed:
+1. Hook (0-3s).
+2. Main Body (2-3 punchy points).
+3. Ending CTA.`,
+    script: `Structure needed:
+1. Hook.
+2. Main content.
+3. Conclusion.`,
+    linkedin_post: `Structure needed:
+1. Powerful hook.
+2. Bulleted value points.
+3. Closing thought.`,
+    carousel: `Structure needed:
+1. Slide 1 (Title)
+2. Slides 2-4 (Value)
+3. Final Slide (CTA)`,
+    caption: `Structure needed:
+1. Hook line.
+2. Short, engaging body.
+3. Call to Action.`
   };
 
-  return [
-    `ACT AS AN EXPERT COPYWRITER. Create the following: ${format.replace(/_/g, " ")}.`,
-    `Platform: ${platform}.`,
-    `Primary Topic: ${topic}.`,
-    `Target Tone: ${tone}.`,
-    optimize ? "Focus on high engagement metrics and visual readability." : "",
-    imageSummary ? `Reference Image Context: ${imageSummary}` : "",
-    "\nSTRICT FORMATTING RULES:",
-    "- Use clean line breaks between every section.",
-    "- Output must be professional and scan-friendly.",
-    "- No placeholder text like [Insert Name].",
-    "- No multiple options.",
-    "- Maximize the context provided in the topic.",
-    "\nSPECIFIC STRUCTURE REQUIREMENTS:",
-    formatRules[format] || formatRules.caption
-  ]
-    .filter(Boolean)
-    .join("\n");
+  return `You are a social media expert. Your task is to write content strictly about the User's Topic.
+DO NOT use generic marketing boilerplate. Stick directly to the subject matter requested.
+
+Topic: ${topic}
+Platform: ${platform}
+Tone: ${tone}
+Content Type: ${format.replace(/_/g, " ")}
+
+${imageSummary ? `Extra Visual Context: ${imageSummary}\n` : ""}
+Rules:
+- Write exactly what was requested.
+- Keep it clean; no markdown choices or internal thoughts.
+- Make it highly relevant to "${topic}".
+
+${formatRules[format] || formatRules.caption}`;
 }
 
 function buildChatPrompt({ message, context, detailed }) {
@@ -203,8 +229,7 @@ function buildOpenRouterMessages(payload) {
     return [
       {
         role: "system",
-        content:
-          "You are a warm, natural conversational assistant. Reply like a real person. Keep spacing clean and avoid post-style formatting, hashtags, multiple options, and heavy structure."
+        content: "You are a helpful, conversational social media assistant. Keep answers natural and concise."
       },
       {
         role: "user",
@@ -216,8 +241,7 @@ function buildOpenRouterMessages(payload) {
   return [
     {
       role: "system",
-      content:
-        "You are an expert social media copywriter. Produce concise, readable output with clean spacing. Never return multiple options. Avoid heavy markdown, large text blocks, and unnecessary symbols."
+      content: "You are an expert copywriter. Output strictly the requested social media content without acknowledging instructions or offering generic business advice."
     },
     {
       role: "user",
@@ -239,39 +263,58 @@ async function generateWithHuggingFace(payload) {
     throw new Error("Missing HUGGINGFACE_API_KEY in backend environment.");
   }
 
-  const prompt = buildHuggingFacePrompt(payload);
+  const messages = buildOpenRouterMessages(payload);
   const candidateModels = [
     env.huggingFaceTextModel,
-    "HuggingFaceTB/SmolLM3-3B",
-    "Qwen/Qwen2.5-7B-Instruct"
+    "Qwen/Qwen2.5-7B-Instruct",
+    "meta-llama/Llama-3.2-3B-Instruct"
   ].filter(Boolean);
 
   let lastError = "Hugging Face text generation failed";
+  const hfEndpoints = [
+    "https://api-inference.huggingface.co/v1/chat/completions",
+    "https://router.huggingface.co/hf-inference/models"
+  ];
 
   for (const model of candidateModels) {
-    const response = await fetch(`${HF_API_URL}/${model}`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${env.huggingFaceApiKey}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        inputs: prompt,
-        parameters: { max_new_tokens: 800, temperature: payload.mode === "chat" ? 0.8 : 0.7, return_full_text: false }
-      })
-    });
+    for (const baseUrl of hfEndpoints) {
+      const isRouter = baseUrl.includes("router.huggingface.co");
+      const url = isRouter ? `${baseUrl}/${model}/v1/chat/completions` : baseUrl;
+      const requestBody = isRouter 
+        ? { model, messages, max_tokens: 800, temperature: payload.mode === "chat" ? 0.8 : 0.7 }
+        : { model, messages, temperature: payload.mode === "chat" ? 0.8 : 0.7, max_tokens: 800 };
 
-    const data = await response.json().catch(() => ({}));
+      try {
+        const response = await fetch(url, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${env.huggingFaceApiKey}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify(requestBody)
+        });
 
-    if (response.ok) {
-      if (Array.isArray(data) && data[0]?.generated_text) {
-        return data[0].generated_text.trim();
+        const data = await response.json();
+
+        if (response.ok) {
+          console.log(`Success with HF model: ${model} via ${isRouter ? 'Router' : 'Inference API'}`);
+          if (data.choices && data.choices[0]?.message?.content) {
+            console.log("Response:", data.choices[0].message.content.trim());
+            return data.choices[0].message.content.trim();
+          }
+          if (data.generated_text) {
+            console.log("Response:", data.generated_text.trim());
+            return data.generated_text.trim();
+          }
+        } else {
+           console.log(`Failed with HF model: ${model} -> ${JSON.stringify(data.error || data)}`);
+        }
+        
+        lastError = data?.error || lastError;
+      } catch (err) {
+        lastError = err.message;
       }
-
-      return data.generated_text?.trim() || "Unable to generate content right now.";
     }
-
-    lastError = data?.error || lastError;
   }
 
   throw new Error(lastError);
@@ -281,6 +324,9 @@ async function generateWithOpenRouter(payload) {
   if (!env.openRouterApiKey || env.openRouterApiKey === "or_xxx") {
     throw new Error("Missing OPENROUTER_API_KEY in backend environment.");
   }
+
+  const promptMessages = buildOpenRouterMessages(payload);
+  console.log("OpenRouter messages:", JSON.stringify(promptMessages, null, 2));
 
   const response = await fetch(OPENROUTER_URL, {
     method: "POST",
@@ -292,7 +338,7 @@ async function generateWithOpenRouter(payload) {
       model: env.openRouterModel,
       temperature: payload.mode === "chat" ? 0.85 : 0.7,
       max_tokens: 1000,
-      messages: buildOpenRouterMessages(payload)
+      messages: promptMessages
     })
   });
 
@@ -313,18 +359,32 @@ async function generateText(payload) {
   try {
     return await generateWithHuggingFace(payload);
   } catch (error) {
-    const isDeprecated = String(error.message).toLowerCase().includes("deprecated");
-
-    if (isDeprecated && env.openRouterApiKey && env.openRouterApiKey !== "or_xxx") {
+    if (env.openRouterApiKey && env.openRouterApiKey !== "or_xxx") {
       return generateWithOpenRouter(payload);
     }
-
     throw error;
   }
 }
 
 export async function generateCaption({ topic, platform, tone, optimize, imageContext = null }) {
   const format = detectContentType(topic);
+  
+  console.log("--- generateCaption ---");
+  console.log("Topic:", topic);
+  console.log("Format:", format);
+  console.log("Platform:", platform);
+  console.log("Tone:", tone);
+
+  // Use Gemini if an image is provided (Multimodal)
+  if (imageContext && genAI) {
+    try {
+      return await generateWithGemini({ topic, platform, tone, format, imageContext });
+    } catch (err) {
+      console.error("Gemini failed, falling back", err);
+      // fallback continues below
+    }
+  }
+
   const imageSummary = await describeUploadedImage(imageContext);
 
   return generateText({
